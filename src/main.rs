@@ -31,14 +31,26 @@ fn mat_to_rgb8_array(mat: &Mat) -> Result<Vec<RGB8>> {
 fn main() -> Result<()> {
     dotenvy::dotenv()?;
 
+    let matches = Command::new("MyApp")
+        .version("1.0")
+        .about("Does awesome things")
+        .arg(arg!(--two <VALUE>).required(true))
+        .arg(arg!(--one <VALUE>).required(true))
+        .get_matches();
+
+    println!(
+        "two: {:?}",
+        matches.get_one::<String>("two").expect("required")
+    );
+
     #[cfg(feature = "highgui")]
     {
         highgui::named_window("original", highgui::WINDOW_NORMAL)?;
         highgui::named_window("frame", highgui::WINDOW_NORMAL)?;
     }
 
-    //let mut cam = videoio::VideoCapture::new(0, videoio::CAP_ANY)?;
-    let mut cam = videoio::VideoCapture::from_file("/home/max/Downloads/test_vid.mp4", videoio::CAP_ANY)?;
+    let mut cam = videoio::VideoCapture::new(0, videoio::CAP_ANY)?;
+    //let mut cam = videoio::VideoCapture::from_file("/home/max/Downloads/test_vid.mp4", videoio::CAP_ANY)?;
     let mut orig_frame = Mat::default();
 
     // Get the size of the video feed
@@ -106,7 +118,7 @@ fn main() -> Result<()> {
         left_flipped.copy_to(&mut dst_roi)?;
 
         // To RGB8 for driving LEDs
-        println!("{:?}", mat_to_rgb8_array(&border_frame));
+        //println!("{:?}", mat_to_rgb8_array(&border_frame));
 
         #[cfg(feature = "highgui")]
         {
