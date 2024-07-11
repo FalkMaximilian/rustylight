@@ -1,0 +1,16 @@
+[package]
+name = "rustylight"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.86"
+dotenvy = "0.15.7"
+opencv = "0.92.0"
+smart-leds = "0.4.0"
+
+[features]
+highgui = []
+
+[profile.release]
+opt-level = 3
