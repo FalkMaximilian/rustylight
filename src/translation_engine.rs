@@ -127,7 +127,7 @@ impl TranslationEngine {
                     let mut target_index = 0;
 
                     // Iterate over the roi from right to left
-                    for col in roi.cols()..0 {
+                    for col in (0..roi.cols()).rev() {
                         // Will keep the mean RGB values
                         let mut mean_b = 0;
                         let mut mean_g = 0;
@@ -234,7 +234,7 @@ impl TranslationEngine {
                 let mut target_index = 0;
 
                 // Iterate over the roi from right to left
-                for row in roi.rows()..0 {
+                for row in (0..roi.rows()).rev() {
                     // Will keep the mean RGB values
                     let mut mean_b = 0;
                     let mut mean_g = 0;

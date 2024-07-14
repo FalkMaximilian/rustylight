@@ -55,9 +55,9 @@ fn main() -> Result<()> {
 
     let mut orig_frame = Mat::default();
 
-    //let mut cam = videoio::VideoCapture::new(0, videoio::CAP_ANY)?;
-    let mut cam =
-        videoio::VideoCapture::from_file("/home/max/Downloads/test_vid_02.mp4", videoio::CAP_ANY)?;
+    let mut cam = videoio::VideoCapture::new(0, videoio::CAP_ANY)?;
+    //let mut cam =
+    //    videoio::VideoCapture::from_file("/home/max/Downloads/test_vid_02.mp4", videoio::CAP_ANY)?;
 
     // Get the size of the video feed
     cam.read(&mut orig_frame)?;
@@ -81,7 +81,7 @@ fn main() -> Result<()> {
 
     let mut target_frame = Mat::new_rows_cols_with_default(
         40,
-        2 * region_height + 2 * region_width,
+        (2 * region_height) + (2 * region_width),
         orig_frame.typ(),
         Scalar::all(0.0),
     )?;
