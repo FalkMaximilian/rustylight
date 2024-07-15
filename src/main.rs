@@ -61,22 +61,15 @@ fn wait_for_frame(v: &mut VideoCapture, f: &mut Mat) {
 fn main() -> Result<()> {
     dotenvy::dotenv()?;
 
+    // Get log level from env or set deafult
     let log_level: Level = match env::var("LOG_LEVEL").as_deref() {
         Ok("INFO") => Level::INFO,
         Ok("DEBUG") => Level::DEBUG,
         Ok("TRACE") => Level::TRACE,
-        _ => Level::TRACE,
+        _ => Level::INFO,
     };
 
-    // a builder for `FmtSubscriber`.
-    let subscriber = FmtSubscriber::builder()
-        // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
-        // will be written to stdout.
-        .with_max_level(log_level)
-        // completes the builder.
-        .finish();
-
-    // Steup for tracing
+    let subscriber = FmtSubscriber::builder().with_max_level(log_level).finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
     // Cli
@@ -92,7 +85,7 @@ fn main() -> Result<()> {
 
     let mut orig_frame = Mat::default();
 
-    let mut cam = videoio::VideoCapture::new(4, videoio::CAP_ANY)?;
+    let mut cam = videoio::VideoCapture::new(0, videoio::CAP_ANY)?;
     //let mut cam =
     //    videoio::VideoCapture::from_file("/home/max/Downloads/test_vid_02.mp4", videoio::CAP_ANY)?;
 
