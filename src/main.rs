@@ -4,19 +4,24 @@
 mod cli;
 mod translation_engine;
 
-use std::env;
+use std::{env, os::unix::thread, time::Duration};
 
 use anyhow::Result;
 use opencv::{
     core::{flip, transpose, Rect, Scalar, Vec3b, CV_8UC3},
     highgui, imgproc,
     prelude::*,
-    videoio,
+    videoio::{self, VideoCapture, CAP_PROP_FRAME_HEIGHT, CAP_PROP_FRAME_WIDTH},
 };
 use smart_leds::RGB8;
 
 use cli::{Direction, RustylightCli, StartCorner};
 use translation_engine::TranslationEngine;
+
+use tracing::{debug, info, Level};
+use tracing_subscriber::FmtSubscriber;
+
+use std::thread::sleep;
 
 fn mat_to_rgb8_array(mat: &Mat) -> Result<Vec<RGB8>> {
     // Ensure the Mat is of the correct type
@@ -41,10 +46,43 @@ fn mat_to_rgb8_array(mat: &Mat) -> Result<Vec<RGB8>> {
     Ok(rgb8_array)
 }
 
+fn wait_for_frame(v: &mut VideoCapture, f: &mut Mat) {
+    loop {
+        v.read(f).expect("Could not read frame.");
+        let size = f.size().expect("Could not get size from frame");
+        if size.width == 0 || size.height == 0 {
+            debug!("Input with invalid size. Waiting...");
+            sleep(Duration::from_millis(500));
+            continue;
+        }
+        break;
+    }
+}
+
 fn main() -> Result<()> {
     dotenvy::dotenv()?;
 
+    let log_level: Level = match env::var("LOG_LEVEL").as_deref() {
+        Ok("INFO") => Level::INFO,
+        Ok("DEBUG") => Level::DEBUG,
+        Ok("TRACE") => Level::TRACE,
+        _ => Level::TRACE,
+    };
+
+    // a builder for `FmtSubscriber`.
+    let subscriber = FmtSubscriber::builder()
+        // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
+        // will be written to stdout.
+        .with_max_level(log_level)
+        // completes the builder.
+        .finish();
+
+    // Steup for tracing
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+
+    // Cli
     let cli = RustylightCli::setup();
+
     let border_thickness = env::var("BORDER_THICKNESS")?.parse()?;
 
     #[cfg(feature = "highgui")]
@@ -55,30 +93,36 @@ fn main() -> Result<()> {
 
     let mut orig_frame = Mat::default();
 
-    let mut cam = videoio::VideoCapture::new(0, videoio::CAP_ANY)?;
+    let mut cam = videoio::VideoCapture::new(4, videoio::CAP_ANY)?;
     //let mut cam =
     //    videoio::VideoCapture::from_file("/home/max/Downloads/test_vid_02.mp4", videoio::CAP_ANY)?;
 
+    // Video input usualy does not need to be
+    cam.set(CAP_PROP_FRAME_WIDTH, 1280.0)?;
+    cam.set(CAP_PROP_FRAME_HEIGHT, 720.0)?;
+
     // Get the size of the video feed
-    cam.read(&mut orig_frame)?;
+    wait_for_frame(&mut cam, &mut orig_frame);
     let size = orig_frame.size()?;
-    println!(
-        "Incoming Video Data - width: {} height: {}",
+    info!(
+        "Reading video data with resolution widht: {}, height: {}",
         size.width, size.height
     );
 
     // The border must be smaller than half of width and height
     if size.width / 2 < border_thickness || size.height < border_thickness {
-        println!(
-            "Border is to thick! Border: {}, Input-width: {}, Input-height: {}",
-            border_thickness, size.width, size.height
+        info!(
+            "Border is too thick! The following must hold: border < width/2 && border < height/2"
         );
         return Ok(());
     }
 
+    // Set the width of "regions"
     let region_width = size.width - border_thickness;
     let region_height = size.height - border_thickness;
 
+    // Create the target target_frame
+    // This will hold the data that shall be sent to the leds
     let mut target_frame = Mat::new_rows_cols_with_default(
         40,
         (2 * region_height) + (2 * region_width),
@@ -86,6 +130,7 @@ fn main() -> Result<()> {
         Scalar::all(0.0),
     )?;
 
+    // Translation funcs that shall be applied to each frame
     let translation_funcs = TranslationEngine::new(
         cli.start_corner,
         cli.direction,
@@ -94,90 +139,13 @@ fn main() -> Result<()> {
         border_thickness,
     );
 
+    info!("----- STARTING MAIN LOOP -----");
     loop {
-        cam.read(&mut orig_frame)?;
+        wait_for_frame(&mut cam, &mut orig_frame);
 
         for func in translation_funcs.iter() {
             func(&orig_frame, &mut target_frame)?;
         }
-
-        //// Copy top border to destionation
-        //let src_roi = Mat::roi(&orig_frame, borders[0])?;
-        //let mut dst_roi = Mat::roi_mut(&mut border_frame, borders[0])?;
-        //src_roi.copy_to(&mut dst_roi)?;
-        //
-        //// Transpose and flip right border
-        //let src_roi = Mat::roi(&orig_frame, borders[3])?;
-        //let mut right_transposed_roi = Mat::default();
-        //transpose(&src_roi, &mut right_transposed_roi)?;
-        //let mut right_flipped_roi = Mat::default();
-        //flip(&right_transposed_roi, &mut right_flipped_roi, 0)?;
-        //
-        //// Copy to destination
-        //let right_border_target = Rect::new(horizontal_main, 0, vertical_main, border_thickness);
-        //let mut dst_roi = Mat::roi_mut(&mut border_frame, right_border_target)?;
-        //right_flipped_roi.copy_to(&mut dst_roi)?;
-        //
-        //// Flip bottom roi
-        //let src_roi = Mat::roi(&orig_frame, borders[1])?;
-        //let mut bottom_flipped_roi = Mat::default();
-        //flip(&src_roi, &mut bottom_flipped_roi, -1)?;
-        //
-        //// Copy flipped
-        //let bottom_border_target = Rect::new(
-        //    horizontal_main + vertical_main,
-        //    0,
-        //    horizontal_main,
-        //    border_thickness,
-        //);
-        //let mut dst_roi = Mat::roi_mut(&mut border_frame, bottom_border_target)?;
-        //bottom_flipped_roi.copy_to(&mut dst_roi)?;
-        //
-        //// Transpose left border
-        //let src_roi = Mat::roi(&orig_frame, borders[2])?;
-        //let mut left_transposed_roi = Mat::default();
-        //transpose(&src_roi, &mut left_transposed_roi)?;
-        //let mut left_flipped = Mat::default();
-        //flip(&left_transposed_roi, &mut left_flipped, 1)?;
-        //
-        //// Copy to destination
-        //let left_border_target = Rect::new(
-        //    2 * horizontal_main + vertical_main,
-        //    0,
-        //    vertical_main,
-        //    border_thickness,
-        //);
-        //let mut dst_roi = Mat::roi_mut(&mut border_frame, left_border_target)?;
-        //left_flipped.copy_to(&mut dst_roi)?;
-        //
-        //let mut mean_colors = Vec::<RGB8>::with_capacity(border_frame.cols() as usize);
-        //
-        //for col in 0..border_frame.cols() {
-        //    let mut sum_r = 0;
-        //    let mut sum_g = 0;
-        //    let mut sum_b = 0;
-        //
-        //    for row in 0..border_frame.rows() {
-        //        let pixel = border_frame.at_2d::<Vec3b>(row, col)?;
-        //
-        //        sum_b += pixel[0] as u32;
-        //        sum_g += pixel[1] as u32;
-        //        sum_r += pixel[2] as u32;
-        //    }
-        //
-        //    sum_r /= border_frame.rows() as u32;
-        //    sum_g /= border_frame.rows() as u32;
-        //    sum_b /= border_frame.rows() as u32;
-        //
-        //    for row in 0..border_frame.rows() {
-        //        *border_frame.at_2d_mut(row, col)? =
-        //            Vec3b::from_array([sum_b as u8, sum_g as u8, sum_r as u8]);
-        //    }
-        //}
-
-        //println!("{:?}", mean_colors);
-        // To RGB8 for driving LEDs
-        //println!("{:?}", mat_to_rgb8_array(&border_frame));
 
         #[cfg(feature = "highgui")]
         {

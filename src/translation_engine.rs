@@ -1,14 +1,22 @@
+use std::ops::Add;
+
 use anyhow::Result;
 use opencv::{
     boxed_ref::BoxedRef,
-    core::{Mat, MatTrait, MatTraitConst, Rect, Vec3b},
+    core::{
+        reduce, transpose, Mat, MatTrait, MatTraitConst, MatTraitConstManual, Rect, Vec3b,
+        REDUCE_MAX,
+    },
 };
 
 use crate::cli::{Direction, StartCorner};
 
+use tracing::{debug, info};
+
 // Roi, Target Mat, Offset
 type Action = Box<dyn Fn(&Mat, &mut Mat) -> Result<()>>;
 
+#[derive(Debug)]
 enum EdgeDirection {
     RTL,
     LTR,
@@ -26,6 +34,10 @@ impl TranslationEngine {
         height: i32,
         thickness: i32,
     ) -> [Action; 4] {
+        debug!(
+            "Setting up frame translation for start: {:?} direction: {:?} border_thickness: {}",
+            start, direction, thickness
+        );
         match direction {
             Direction::CW => Self::get_translation_funcs_cw(start, width, height, thickness),
             Direction::CCW => Self::get_translation_funcs_ccw(start, width, height, thickness),
@@ -41,6 +53,10 @@ impl TranslationEngine {
         height: i32,
         thickness: i32,
     ) -> [Action; 4] {
+        debug!(
+            "Setting up translation functions for clockwise layout starting from {:?}",
+            start
+        );
         let top_region = Rect::new(0, 0, width, thickness);
         let right_region = Rect::new(width, 0, thickness, height);
         let bottom_region = Rect::new(thickness, height, width, thickness);
@@ -83,6 +99,10 @@ impl TranslationEngine {
         height: i32,
         thickness: i32,
     ) -> [Action; 4] {
+        debug!(
+            "Setting up translation functions for counter clockwise layout starting from {:?}",
+            start
+        );
         let top_region = Rect::new(thickness, 0, width, thickness);
         let right_region = Rect::new(width, thickness, thickness, height);
         let bottom_region = Rect::new(0, height, width, thickness);
@@ -117,6 +137,7 @@ impl TranslationEngine {
     }
 
     fn translation_func(direction: EdgeDirection, offset: i32, region: Rect) -> Action {
+        debug!("Creating translation func for direction {:?}", direction);
         match direction {
             // Read the roi from right to left while calculating the mean and writing to target
             EdgeDirection::RTL => {

@@ -1,5 +1,6 @@
 use clap::Parser;
 use clap::{arg, ValueEnum};
+use tracing::info;
 
 #[derive(Parser)]
 #[command(name = "rustylight")]
@@ -25,24 +26,24 @@ impl RustylightCli {
         let cli = RustylightCli::parse();
 
         match cli.start_corner {
-            StartCorner::TL => println!("Top left corner selected"),
-            StartCorner::TR => println!("Top right corner selected"),
-            StartCorner::BL => println!("Bottom left corner selected"),
-            StartCorner::BR => println!("Bottom right corner selected"),
+            StartCorner::TL => info!("Top left corner was selected as start"),
+            StartCorner::TR => info!("Top right corner was selected as start"),
+            StartCorner::BL => info!("Bottom left corner was selected as start"),
+            StartCorner::BR => info!("Bottom right corner was selected as start"),
         }
 
         match cli.direction {
-            Direction::CW => println!("Clockwise selected"),
-            Direction::CCW => println!("Counter Clockwise selected"),
+            Direction::CW => info!("Clockwise was selected"),
+            Direction::CCW => info!("Counter Clockwise was selected"),
         }
 
-        println!("You have specified that there are {} LEDs", cli.led_count);
+        info!("You specified that there are {} LEDs", cli.led_count);
 
         cli
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 pub enum StartCorner {
     /// Top Left Corner
     TL,
