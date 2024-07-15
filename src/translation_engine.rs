@@ -1,17 +1,9 @@
-use std::ops::Add;
-
 use anyhow::Result;
-use opencv::{
-    boxed_ref::BoxedRef,
-    core::{
-        reduce, transpose, Mat, MatTrait, MatTraitConst, MatTraitConstManual, Rect, Vec3b,
-        REDUCE_MAX,
-    },
-};
+use opencv::core::{Mat, MatTrait, MatTraitConst, Rect, Vec3b};
 
 use crate::cli::{Direction, StartCorner};
 
-use tracing::{debug, info};
+use tracing::debug;
 
 // Roi, Target Mat, Offset
 type Action = Box<dyn Fn(&Mat, &mut Mat) -> Result<()>>;

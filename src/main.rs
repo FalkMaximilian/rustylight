@@ -4,18 +4,17 @@
 mod cli;
 mod translation_engine;
 
-use std::{env, os::unix::thread, time::Duration};
+use std::{env, time::Duration};
 
 use anyhow::Result;
 use opencv::{
-    core::{flip, transpose, Rect, Scalar, Vec3b, CV_8UC3},
-    highgui, imgproc,
+    core::{Scalar, Vec3b, CV_8UC3},
     prelude::*,
     videoio::{self, VideoCapture, CAP_PROP_FRAME_HEIGHT, CAP_PROP_FRAME_WIDTH},
 };
 use smart_leds::RGB8;
 
-use cli::{Direction, RustylightCli, StartCorner};
+use cli::RustylightCli;
 use translation_engine::TranslationEngine;
 
 use tracing::{debug, info, Level};
