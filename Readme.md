@@ -1,6 +1,6 @@
 <h1 align="center">✨ Rustylight ✨</h1>
 
-<p align=center>This project aims to provide an easy to, efficient alternative to ambilight that can be realised for ~100€</p> 
+<p align=center>This project aims to provide an easy to use, efficient alternative to ambilight that can be realised for ~100€</p> 
 
 ## Links 🔗
 - [Repo](https://github.com/FalkMaximilian/rustylight.git "Rustylight Repo")
@@ -53,8 +53,6 @@ Thanks for the image pinout.xyz!
 
 
 ## Future updates ⬆️
-
-Here you can use a Special GFM Feature called a task list. A task list will show which things are done and which are pending. You can utilize a task list as
 
 - [x] Flexible amount of LEDs
 - [x] Configure at which edge of the screen the lightstrip starts 
