@@ -27,7 +27,7 @@ use std::thread::sleep;
 use smart_leds::{SmartLedsWrite, RGB8};
 use ws281x_rpi::Ws2812Rpi;
 
-fn mat_to_rgb8_array(temp: &Vec<Vec3b>, pixel_per_led: i32) -> Vec<RGB8> {
+fn vec3b_to_smaller_rgb8(temp: &Vec<Vec3b>, pixel_per_led: i32) -> Vec<RGB8> {
     let mut pixels: Vec<RGB8> = Vec::new();
 
     for chunk in temp.chunks(pixel_per_led as usize) {
@@ -133,7 +133,7 @@ fn main() -> Result<()> {
         Vec::with_capacity(((2 * region_height) + (2 * region_height)) as usize);
 
     let mut led_values: Vec<RGB8> = Vec::with_capacity(settings.led_count as usize);
-    //let mut ws = Ws2812Rpi::new(settings.led_count, 10)?;
+    let mut ws = Ws2812Rpi::new(settings.led_count, 18)?;
 
     // Translation funcs that shall be applied to each frame
     let translation_funcs = TranslationEngine::new(
@@ -151,6 +151,13 @@ fn main() -> Result<()> {
         for func in translation_funcs.iter() {
             func(&orig_frame, &mut target_vec)?;
         }
+
+        ws.write(
+            vec3b_to_smaller_rgb8(&target_vec, pixel_per_led)
+                .iter()
+                .cloned(),
+        )
+        .unwrap();
 
         #[cfg(feature = "highgui")]
         {
