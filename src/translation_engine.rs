@@ -1,12 +1,13 @@
 use anyhow::Result;
 use opencv::core::{Mat, MatTrait, MatTraitConst, Rect, Vec3b};
 
+use smart_leds::RGB8;
 use tracing::debug;
 
 use crate::settings::{Direction, StartCorner};
 
 // Roi, Target Mat, Offset
-type Action = Box<dyn Fn(&Mat, &mut Mat) -> Result<()>>;
+type Action = Box<dyn Fn(&Mat, &mut Vec<Vec3b>) -> Result<()>>;
 
 #[derive(Debug)]
 enum EdgeDirection {
@@ -139,7 +140,7 @@ impl TranslationEngine {
         match direction {
             // Read the roi from right to left while calculating the mean and writing to target
             EdgeDirection::RTL => {
-                Box::new(move |source: &Mat, target: &mut Mat| -> Result<()> {
+                Box::new(move |source: &Mat, target: &mut Vec<Vec3b>| -> Result<()> {
                     let roi = Mat::roi(source, region)?;
 
                     // Offset + target index will be the actual index of a new value
@@ -166,122 +167,119 @@ impl TranslationEngine {
                         mean_g /= roi.rows() as u32;
                         mean_r /= roi.rows() as u32;
 
-                        for row in 0..target.rows() {
-                            // Write resulting RGB value to target and increase counter
-                            *target.at_2d_mut(row, offset + target_index)? =
-                                Vec3b::from_array([mean_b as u8, mean_g as u8, mean_r as u8]);
-                        }
+                        // Write resulting RGB value to target and increase counter
+                        target[(offset + target_index) as usize] =
+                            Vec3b::from_array([mean_b as u8, mean_g as u8, mean_r as u8]);
                         target_index += 1;
                     }
 
                     Ok(())
                 })
             }
-            EdgeDirection::LTR => Box::new(move |source: &Mat, target: &mut Mat| -> Result<()> {
-                let roi = Mat::roi(source, region)?;
+            EdgeDirection::LTR => {
+                Box::new(move |source: &Mat, target: &mut Vec<Vec3b>| -> Result<()> {
+                    let roi = Mat::roi(source, region)?;
 
-                let mut target_index = 0;
+                    let mut target_index = 0;
 
-                // Iterate over the roi from right to left
-                for col in 0..roi.cols() {
-                    // Will keep the mean RGB values
-                    let mut mean_b = 0;
-                    let mut mean_g = 0;
-                    let mut mean_r = 0;
+                    // Iterate over the roi from right to left
+                    for col in 0..roi.cols() {
+                        // Will keep the mean RGB values
+                        let mut mean_b = 0;
+                        let mut mean_g = 0;
+                        let mut mean_r = 0;
 
+                        for row in 0..roi.rows() {
+                            let pixel = roi.at_2d::<Vec3b>(row, col)?;
+
+                            mean_b += pixel[0] as u32;
+                            mean_g += pixel[1] as u32;
+                            mean_r += pixel[2] as u32;
+                        }
+
+                        // Calculate the mean
+                        mean_b /= roi.rows() as u32;
+                        mean_g /= roi.rows() as u32;
+                        mean_r /= roi.rows() as u32;
+
+                        // Write resulting RGB value to target and increase counter
+                        target[(offset + target_index) as usize] =
+                            Vec3b::from_array([mean_b as u8, mean_g as u8, mean_r as u8]);
+                        target_index += 1;
+                    }
+
+                    Ok(())
+                })
+            }
+            EdgeDirection::TTB => {
+                Box::new(move |source: &Mat, target: &mut Vec<Vec3b>| -> Result<()> {
+                    let roi = Mat::roi(source, region)?;
+
+                    let mut target_index = 0;
+
+                    // Iterate over the roi from right to left
                     for row in 0..roi.rows() {
-                        let pixel = roi.at_2d::<Vec3b>(row, col)?;
+                        // Will keep the mean RGB values
+                        let mut mean_b = 0;
+                        let mut mean_g = 0;
+                        let mut mean_r = 0;
 
-                        mean_b += pixel[0] as u32;
-                        mean_g += pixel[1] as u32;
-                        mean_r += pixel[2] as u32;
-                    }
+                        for col in 0..roi.cols() {
+                            let pixel = roi.at_2d::<Vec3b>(row, col)?;
 
-                    // Calculate the mean
-                    mean_b /= roi.rows() as u32;
-                    mean_g /= roi.rows() as u32;
-                    mean_r /= roi.rows() as u32;
+                            mean_b += pixel[0] as u32;
+                            mean_g += pixel[1] as u32;
+                            mean_r += pixel[2] as u32;
+                        }
 
-                    for row in 0..target.rows() {
+                        // Calculate the mean
+                        mean_b /= roi.cols() as u32;
+                        mean_g /= roi.cols() as u32;
+                        mean_r /= roi.cols() as u32;
+
                         // Write resulting RGB value to target and increase counter
-                        *target.at_2d_mut(row, offset + target_index)? =
+                        target[(offset + target_index) as usize] =
                             Vec3b::from_array([mean_b as u8, mean_g as u8, mean_r as u8]);
-                    }
-                    target_index += 1;
-                }
-
-                Ok(())
-            }),
-            EdgeDirection::TTB => Box::new(move |source: &Mat, target: &mut Mat| -> Result<()> {
-                let roi = Mat::roi(source, region)?;
-
-                let mut target_index = 0;
-
-                // Iterate over the roi from right to left
-                for row in 0..roi.rows() {
-                    // Will keep the mean RGB values
-                    let mut mean_b = 0;
-                    let mut mean_g = 0;
-                    let mut mean_r = 0;
-
-                    for col in 0..roi.cols() {
-                        let pixel = roi.at_2d::<Vec3b>(row, col)?;
-
-                        mean_b += pixel[0] as u32;
-                        mean_g += pixel[1] as u32;
-                        mean_r += pixel[2] as u32;
+                        target_index += 1;
                     }
 
-                    // Calculate the mean
-                    mean_b /= roi.cols() as u32;
-                    mean_g /= roi.cols() as u32;
-                    mean_r /= roi.cols() as u32;
+                    Ok(())
+                })
+            }
+            EdgeDirection::BTT => {
+                Box::new(move |source: &Mat, target: &mut Vec<Vec3b>| -> Result<()> {
+                    let roi = Mat::roi(source, region)?;
 
-                    for row in 0..target.rows() {
-                        // Write resulting RGB value to target and increase counter
-                        *target.at_2d_mut(row, offset + target_index)? =
+                    let mut target_index = 0;
+
+                    // Iterate over the roi from right to left
+                    for row in (0..roi.rows()).rev() {
+                        // Will keep the mean RGB values
+                        let mut mean_b = 0;
+                        let mut mean_g = 0;
+                        let mut mean_r = 0;
+
+                        for col in 0..roi.cols() {
+                            let pixel = roi.at_2d::<Vec3b>(row, col)?;
+
+                            mean_b += pixel[0] as u32;
+                            mean_g += pixel[1] as u32;
+                            mean_r += pixel[2] as u32;
+                        }
+
+                        // Calculate the mean
+                        mean_b /= roi.cols() as u32;
+                        mean_g /= roi.cols() as u32;
+                        mean_r /= roi.cols() as u32;
+
+                        target[(offset + target_index) as usize] =
                             Vec3b::from_array([mean_b as u8, mean_g as u8, mean_r as u8]);
-                    }
-                    target_index += 1;
-                }
-
-                Ok(())
-            }),
-            EdgeDirection::BTT => Box::new(move |source: &Mat, target: &mut Mat| -> Result<()> {
-                let roi = Mat::roi(source, region)?;
-
-                let mut target_index = 0;
-
-                // Iterate over the roi from right to left
-                for row in (0..roi.rows()).rev() {
-                    // Will keep the mean RGB values
-                    let mut mean_b = 0;
-                    let mut mean_g = 0;
-                    let mut mean_r = 0;
-
-                    for col in 0..roi.cols() {
-                        let pixel = roi.at_2d::<Vec3b>(row, col)?;
-
-                        mean_b += pixel[0] as u32;
-                        mean_g += pixel[1] as u32;
-                        mean_r += pixel[2] as u32;
+                        target_index += 1;
                     }
 
-                    // Calculate the mean
-                    mean_b /= roi.cols() as u32;
-                    mean_g /= roi.cols() as u32;
-                    mean_r /= roi.cols() as u32;
-
-                    for row in 0..target.rows() {
-                        // Write resulting RGB value to target and increase counter
-                        *target.at_2d_mut(row, offset + target_index)? =
-                            Vec3b::from_array([mean_b as u8, mean_g as u8, mean_r as u8]);
-                    }
-                    target_index += 1;
-                }
-
-                Ok(())
-            }),
+                    Ok(())
+                })
+            }
         }
     }
 }
