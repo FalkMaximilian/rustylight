@@ -18,7 +18,7 @@ use settings::Settings;
 
 use translation_engine::TranslationEngine;
 
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 use tracing_subscriber::FmtSubscriber;
 use video::Video;
 
@@ -27,28 +27,33 @@ use std::thread::sleep;
 use smart_leds::{SmartLedsWrite, RGB8};
 use ws281x_rpi::Ws2812Rpi;
 
-//fn mat_to_rgb8_array(mat: &Mat) -> Result<Vec<RGB8>> {
-//    // Ensure the Mat is of the correct type
-//    if mat.typ() != CV_8UC3 {
-//        println!("Mat in incorrect format!");
-//    }
-//
-//    let rows = mat.rows();
-//    let cols = mat.cols();
-//    let mut rgb8_array = Vec::with_capacity((rows * cols) as usize);
-//
-//    for row in 0..rows {
-//        for col in 0..cols {
-//            let pixel = mat.at_2d::<Vec3b>(row, col)?;
-//            rgb8_array.push(RGB8 {
-//                r: pixel[0],
-//                g: pixel[1],
-//                b: pixel[2],
-//            })
-//        }
-//    }
-//    Ok(rgb8_array)
-//}
+fn mat_to_rgb8_array(temp: &Vec<Vec3b>, pixel_per_led: i32) -> Vec<RGB8> {
+    let mut pixels: Vec<RGB8> = Vec::new();
+
+    for chunk in temp.chunks(pixel_per_led as usize) {
+        let mut mean_b = 0;
+        let mut mean_g = 0;
+        let mut mean_r = 0;
+
+        for elem in chunk.iter() {
+            mean_b += elem[0] as u32;
+            mean_g += elem[1] as u32;
+            mean_r += elem[2] as u32;
+        }
+
+        mean_b /= pixel_per_led as u32;
+        mean_g /= pixel_per_led as u32;
+        mean_r /= pixel_per_led as u32;
+
+        pixels.push(RGB8 {
+            r: mean_r as u8,
+            g: mean_g as u8,
+            b: mean_b as u8,
+        })
+    }
+
+    pixels
+}
 
 /// If a size-zero has been received wait for half a second and try again
 fn wait_for_frame(v: &mut VideoCapture, f: &mut Mat) {
@@ -112,17 +117,23 @@ fn main() -> Result<()> {
     let region_width = size.width - settings.capture_area_size;
     let region_height = size.height - settings.capture_area_size;
 
+    let pixel_per_led = ((2 * region_height) + (2 * region_width)) / settings.led_count;
+    info!("Pixels per LED: {}", pixel_per_led);
+
     // Create the target target_frame
     // This will hold the data that shall be sent to the leds
-    let mut target_frame = Mat::new_rows_cols_with_default(
-        1,
-        (2 * region_height) + (2 * region_width),
-        orig_frame.typ(),
-        Scalar::all(0.0),
-    )?;
+    //let mut target_frame = Mat::new_rows_cols_with_default(
+    //    1,
+    //    (2 * region_height) + (2 * region_width),
+    //    orig_frame.typ(),
+    //    Scalar::all(0.0),
+    //)?;
 
-    let mut led_values: [RGB8; settings.led_count] = [RGB8::default(); settings.led_count];
-    let mut ws = Ws2812Rpi::new(settings.led_count, 10).unwrap();
+    let mut target_vec: Vec<Vec3b> =
+        Vec::with_capacity(((2 * region_height) + (2 * region_height)) as usize);
+
+    let mut led_values: Vec<RGB8> = Vec::with_capacity(settings.led_count as usize);
+    //let mut ws = Ws2812Rpi::new(settings.led_count, 10)?;
 
     // Translation funcs that shall be applied to each frame
     let translation_funcs = TranslationEngine::new(
@@ -138,7 +149,7 @@ fn main() -> Result<()> {
         wait_for_frame(&mut input, &mut orig_frame);
 
         for func in translation_funcs.iter() {
-            func(&orig_frame, &mut target_frame)?;
+            func(&orig_frame, &mut target_vec)?;
         }
 
         #[cfg(feature = "highgui")]
