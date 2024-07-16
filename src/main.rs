@@ -24,6 +24,9 @@ use video::Video;
 
 use std::thread::sleep;
 
+use smart_leds::{SmartLedsWrite, RGB8};
+use ws281x_rpi::Ws2812Rpi;
+
 //fn mat_to_rgb8_array(mat: &Mat) -> Result<Vec<RGB8>> {
 //    // Ensure the Mat is of the correct type
 //    if mat.typ() != CV_8UC3 {
@@ -117,6 +120,9 @@ fn main() -> Result<()> {
         orig_frame.typ(),
         Scalar::all(0.0),
     )?;
+
+    let mut led_values: [RGB8; settings.led_count] = [RGB8::default(); settings.led_count];
+    let mut ws = Ws2812Rpi::new(settings.led_count, 10).unwrap();
 
     // Translation funcs that shall be applied to each frame
     let translation_funcs = TranslationEngine::new(
