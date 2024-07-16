@@ -4,8 +4,21 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tracing::level_filters::LevelFilter;
 
-use crate::cli::{Direction, StartCorner};
+#[derive(Debug, Serialize, Deserialize, Copy, Clone)]
+pub enum Direction {
+    CW,
+    CCW,
+}
 
+#[derive(Debug, Serialize, Deserialize, Copy, Clone)]
+pub enum StartCorner {
+    TL,
+    TR,
+    BL,
+    BR,
+}
+
+/// Compatibility loglevel enum because LevelFilter does not implement Serialize/Deserialize
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum LogLevel {
     Info,
@@ -24,6 +37,10 @@ impl From<LogLevel> for LevelFilter {
     }
 }
 
+/// Resolution will be used to set the internal processing resolution. It is likely not necessary
+/// to process each frame in 1080p or more if only 100-200 pixels are needed for the lightstrip.
+/// This also reduces load on the system running rustylight. This is useful because usually low
+/// powered devices will be used for a diy ambilight setup.
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum Resolution {
     FHD,
@@ -42,6 +59,7 @@ impl From<Resolution> for (f64, f64) {
     }
 }
 
+/// Settings for rustylight that will be read from settings.toml file
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Settings {
     pub log_level: LogLevel,
@@ -54,7 +72,7 @@ pub struct Settings {
 }
 
 impl Settings {
-    /// Read settings from a .toml file or create a new default one
+    /// Read settings.toml file or create a new one with default values if it doesn't exist.
     pub fn new() -> Result<Self> {
         // Setup path to settings file
         let home_dir = env::var("HOME").expect("Could not find the HOME environment variable");
@@ -83,7 +101,7 @@ impl Settings {
         }
     }
 
-    /// Create default settings
+    /// Create default settings. They can be changed later in the file.
     fn default() -> Settings {
         Settings {
             log_level: LogLevel::Info,

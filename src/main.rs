@@ -1,26 +1,24 @@
 #![allow(dead_code)]
 #![allow(unreachable_code)]
 
-mod cli;
 mod settings;
 mod translation_engine;
 mod video;
 
-use std::{env, path::Path, time::Duration};
+use std::time::Duration;
 
 use anyhow::Result;
 use opencv::{
     core::{Scalar, Vec3b, CV_8UC3},
     highgui,
     prelude::*,
-    videoio::{self, VideoCapture, CAP_PROP_FRAME_HEIGHT, CAP_PROP_FRAME_WIDTH},
+    videoio::VideoCapture,
 };
 use settings::Settings;
 
-use cli::RustylightCli;
 use translation_engine::TranslationEngine;
 
-use tracing::{debug, info, Level};
+use tracing::{debug, info};
 use tracing_subscriber::FmtSubscriber;
 use video::Video;
 
@@ -49,6 +47,7 @@ use std::thread::sleep;
 //    Ok(rgb8_array)
 //}
 
+/// If a size-zero has been received wait for half a second and try again
 fn wait_for_frame(v: &mut VideoCapture, f: &mut Mat) {
     loop {
         v.read(f).expect("Could not read frame.");
@@ -77,10 +76,6 @@ fn main() -> Result<()> {
         "Rustylight will use the following settings: {:?}",
         &settings
     );
-
-    // Cli
-    #[cfg(feature = "cli")]
-    let cli = RustylightCli::setup();
 
     #[cfg(feature = "highgui")]
     {
