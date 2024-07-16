@@ -1,9 +1,9 @@
 use anyhow::Result;
 use opencv::core::{Mat, MatTrait, MatTraitConst, Rect, Vec3b};
 
-use crate::cli::{Direction, StartCorner};
-
 use tracing::debug;
+
+use crate::settings::{Direction, StartCorner};
 
 // Roi, Target Mat, Offset
 type Action = Box<dyn Fn(&Mat, &mut Mat) -> Result<()>>;
@@ -19,6 +19,9 @@ enum EdgeDirection {
 pub struct TranslationEngine {}
 
 impl TranslationEngine {
+    /// An array with 4 closures will be returned by this function. These 4 closures will
+    /// correspons to the 4 edges of a display. The 4 closures will be applied to each incoming
+    /// frame and translate the color values to a 1D array that represents the LED strip
     pub fn new(
         start: StartCorner,
         direction: Direction,
@@ -36,9 +39,9 @@ impl TranslationEngine {
         }
     }
 
-    // Creates an array of exactly four functions that later shall be applied on an input frame.
-    // There are four possible cases depending on which corner the led_strip starts at. This gives
-    // the functions for clockwise.
+    /// Creates an array of exactly four functions that later shall be applied on an input frame.
+    /// There are four possible cases depending on which corner the led_strip starts at. This gives
+    /// the functions for clockwise.
     fn get_translation_funcs_cw(
         start: StartCorner,
         width: i32,
@@ -82,9 +85,9 @@ impl TranslationEngine {
         }
     }
 
-    // Creates an array of exactly four functions that later shall be applied on an input frame.
-    // There are four possible cases depending on which corner the led_strip starts at. This gives
-    // the functions for counter clockwise.
+    /// Creates an array of exactly four functions that later shall be applied on an input frame.
+    /// There are four possible cases depending on which corner the led_strip starts at. This gives
+    /// the functions for counter clockwise.
     fn get_translation_funcs_ccw(
         start: StartCorner,
         width: i32,
@@ -128,6 +131,9 @@ impl TranslationEngine {
         }
     }
 
+    /// Returns a closure translation function that will can be applied to an incoming frame. Each
+    /// translation function averages the values in the provided region along the specified
+    /// direction. The resulting values will be written to target starting from an offset.
     fn translation_func(direction: EdgeDirection, offset: i32, region: Rect) -> Action {
         debug!("Creating translation func for direction {:?}", direction);
         match direction {
