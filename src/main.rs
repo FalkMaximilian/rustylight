@@ -2,48 +2,52 @@
 #![allow(unreachable_code)]
 
 mod cli;
+mod settings;
 mod translation_engine;
+mod video;
 
-use std::{env, time::Duration};
+use std::{env, path::Path, time::Duration};
 
 use anyhow::Result;
 use opencv::{
     core::{Scalar, Vec3b, CV_8UC3},
+    highgui,
     prelude::*,
     videoio::{self, VideoCapture, CAP_PROP_FRAME_HEIGHT, CAP_PROP_FRAME_WIDTH},
 };
-use smart_leds::RGB8;
+use settings::Settings;
 
 use cli::RustylightCli;
 use translation_engine::TranslationEngine;
 
 use tracing::{debug, info, Level};
 use tracing_subscriber::FmtSubscriber;
+use video::Video;
 
 use std::thread::sleep;
 
-fn mat_to_rgb8_array(mat: &Mat) -> Result<Vec<RGB8>> {
-    // Ensure the Mat is of the correct type
-    if mat.typ() != CV_8UC3 {
-        println!("Mat in incorrect format!");
-    }
-
-    let rows = mat.rows();
-    let cols = mat.cols();
-    let mut rgb8_array = Vec::with_capacity((rows * cols) as usize);
-
-    for row in 0..rows {
-        for col in 0..cols {
-            let pixel = mat.at_2d::<Vec3b>(row, col)?;
-            rgb8_array.push(RGB8 {
-                r: pixel[0],
-                g: pixel[1],
-                b: pixel[2],
-            })
-        }
-    }
-    Ok(rgb8_array)
-}
+//fn mat_to_rgb8_array(mat: &Mat) -> Result<Vec<RGB8>> {
+//    // Ensure the Mat is of the correct type
+//    if mat.typ() != CV_8UC3 {
+//        println!("Mat in incorrect format!");
+//    }
+//
+//    let rows = mat.rows();
+//    let cols = mat.cols();
+//    let mut rgb8_array = Vec::with_capacity((rows * cols) as usize);
+//
+//    for row in 0..rows {
+//        for col in 0..cols {
+//            let pixel = mat.at_2d::<Vec3b>(row, col)?;
+//            rgb8_array.push(RGB8 {
+//                r: pixel[0],
+//                g: pixel[1],
+//                b: pixel[2],
+//            })
+//        }
+//    }
+//    Ok(rgb8_array)
+//}
 
 fn wait_for_frame(v: &mut VideoCapture, f: &mut Mat) {
     loop {
@@ -61,21 +65,22 @@ fn wait_for_frame(v: &mut VideoCapture, f: &mut Mat) {
 fn main() -> Result<()> {
     dotenvy::dotenv()?;
 
-    // Get log level from env or set deafult
-    let log_level: Level = match env::var("LOG_LEVEL").as_deref() {
-        Ok("INFO") => Level::INFO,
-        Ok("DEBUG") => Level::DEBUG,
-        Ok("TRACE") => Level::TRACE,
-        _ => Level::INFO,
-    };
+    let settings = Settings::new()?;
 
-    let subscriber = FmtSubscriber::builder().with_max_level(log_level).finish();
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(settings.log_level)
+        .finish();
+
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
-    // Cli
-    let cli = RustylightCli::setup();
+    info!(
+        "Rustylight will use the following settings: {:?}",
+        &settings
+    );
 
-    let border_thickness = env::var("BORDER_THICKNESS")?.parse()?;
+    // Cli
+    #[cfg(feature = "cli")]
+    let cli = RustylightCli::setup();
 
     #[cfg(feature = "highgui")]
     {
@@ -85,16 +90,12 @@ fn main() -> Result<()> {
 
     let mut orig_frame = Mat::default();
 
-    let mut cam = videoio::VideoCapture::new(0, videoio::CAP_ANY)?;
+    let mut input = Video::new(&settings)?;
     //let mut cam =
     //    videoio::VideoCapture::from_file("/home/max/Downloads/test_vid_02.mp4", videoio::CAP_ANY)?;
 
-    // Video input usualy does not need to be
-    cam.set(CAP_PROP_FRAME_WIDTH, 1280.0)?;
-    cam.set(CAP_PROP_FRAME_HEIGHT, 720.0)?;
-
     // Get the size of the video feed
-    wait_for_frame(&mut cam, &mut orig_frame);
+    wait_for_frame(&mut input, &mut orig_frame);
     let size = orig_frame.size()?;
     info!(
         "Reading video data with resolution widht: {}, height: {}",
@@ -102,7 +103,7 @@ fn main() -> Result<()> {
     );
 
     // The border must be smaller than half of width and height
-    if size.width / 2 < border_thickness || size.height < border_thickness {
+    if size.width / 2 < settings.capture_area_size || size.height < settings.capture_area_size {
         info!(
             "Border is too thick! The following must hold: border < width/2 && border < height/2"
         );
@@ -110,13 +111,13 @@ fn main() -> Result<()> {
     }
 
     // Set the width of "regions"
-    let region_width = size.width - border_thickness;
-    let region_height = size.height - border_thickness;
+    let region_width = size.width - settings.capture_area_size;
+    let region_height = size.height - settings.capture_area_size;
 
     // Create the target target_frame
     // This will hold the data that shall be sent to the leds
     let mut target_frame = Mat::new_rows_cols_with_default(
-        40,
+        1,
         (2 * region_height) + (2 * region_width),
         orig_frame.typ(),
         Scalar::all(0.0),
@@ -124,16 +125,16 @@ fn main() -> Result<()> {
 
     // Translation funcs that shall be applied to each frame
     let translation_funcs = TranslationEngine::new(
-        cli.start_corner,
-        cli.direction,
+        settings.start_corner,
+        settings.direction,
         region_width,
         region_height,
-        border_thickness,
+        settings.capture_area_size,
     );
 
     info!("----- STARTING MAIN LOOP -----");
     loop {
-        wait_for_frame(&mut cam, &mut orig_frame);
+        wait_for_frame(&mut input, &mut orig_frame);
 
         for func in translation_funcs.iter() {
             func(&orig_frame, &mut target_frame)?;

@@ -1,5 +1,6 @@
 use clap::Parser;
 use clap::{arg, ValueEnum};
+use serde::{Deserialize, Serialize};
 use tracing::info;
 
 #[derive(Parser)]
@@ -43,7 +44,7 @@ impl RustylightCli {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug, Serialize, Deserialize)]
 pub enum StartCorner {
     /// Top Left Corner
     TL,
@@ -55,7 +56,7 @@ pub enum StartCorner {
     BR,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Serialize, Deserialize)]
 pub enum Direction {
     /// Clockwise
     CW,

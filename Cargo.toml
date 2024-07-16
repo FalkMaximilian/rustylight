@@ -4,16 +4,29 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# Error handling
 anyhow = "1.0.86"
+
+# Cli and config
 clap = {version = "4.5.9", features = ["derive"]}
 dotenvy = "0.15.7"
+toml = "0.8.14"
+config = "0.14.0"
+
+# Image processing
 opencv = "0.92.0"
-smart-leds = "0.4.0"
+
+# Logging/tracing
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 
+# Serde
+serde = "1.0.204"
+serde_derive = "1.0.204"
+
 [features]
 highgui = []
+cli = []
 
 [profile.release]
 opt-level = 3
