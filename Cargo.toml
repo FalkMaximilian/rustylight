@@ -8,12 +8,8 @@ edition = "2021"
 anyhow = "1.0.86"
 
 # Cli and config
-dotenvy = "0.15.7"
 toml = "0.8.14"
 config = "0.14.0"
-
-# Image processing
-opencv = "0.92.0"
 
 # Logging/tracing
 tracing = "0.1.40"
@@ -26,6 +22,9 @@ serde_derive = "1.0.204"
 # LEDs
 smart-leds = "0.3.0"
 ws281x-rpi = "0.0.1"
+
+# Get video stream
+v4l = "0.14.0"
 
 [features]
 highgui = []

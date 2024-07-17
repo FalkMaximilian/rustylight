@@ -1,13 +1,15 @@
 use anyhow::Result;
-use opencv::core::{Mat, MatTrait, MatTraitConst, Rect, Vec3b};
 
 use smart_leds::RGB8;
 use tracing::debug;
 
-use crate::settings::{Direction, StartCorner};
+use crate::{
+    lightstrip::{self, Lightstrip},
+    settings::{Direction, StartCorner},
+};
 
 // Roi, Target Mat, Offset
-type Action = Box<dyn Fn(&Mat, &mut Vec<Vec3b>) -> Result<()>>;
+type Action = Box<dyn Fn(&[(u32, u32, u32)], &Lightstrip)>;
 
 #[derive(Debug)]
 enum EdgeDirection {
@@ -15,6 +17,13 @@ enum EdgeDirection {
     LTR,
     TTB,
     BTT,
+}
+
+struct Rect {
+    sx: usize,
+    sy: usize,
+    w: usize,
+    h: usize,
 }
 
 pub struct TranslationEngine {}
@@ -29,14 +38,21 @@ impl TranslationEngine {
         width: i32,
         height: i32,
         thickness: i32,
+        fw: i32,
+        fh: i32,
+        ppl: i32,
     ) -> [Action; 4] {
         debug!(
             "Setting up frame translation for start: {:?} direction: {:?} border_thickness: {}",
             start, direction, thickness
         );
         match direction {
-            Direction::CW => Self::get_translation_funcs_cw(start, width, height, thickness),
-            Direction::CCW => Self::get_translation_funcs_ccw(start, width, height, thickness),
+            Direction::CW => {
+                Self::get_translation_funcs_cw(start, width, height, thickness, fw, fh, ppl)
+            }
+            Direction::CCW => {
+                Self::get_translation_funcs_ccw(start, width, height, thickness, fw, fh, ppl)
+            }
         }
     }
 
@@ -45,43 +61,66 @@ impl TranslationEngine {
     /// the functions for clockwise.
     fn get_translation_funcs_cw(
         start: StartCorner,
-        width: i32,
-        height: i32,
+        rect_width: i32,
+        rect_height: i32,
         thickness: i32,
+        fw: i32,
+        fh: i32,
+        ppl: i32,
     ) -> [Action; 4] {
         debug!(
             "Setting up translation functions for clockwise layout starting from {:?}",
             start
         );
-        let top_region = Rect::new(0, 0, width, thickness);
-        let right_region = Rect::new(width, 0, thickness, height);
-        let bottom_region = Rect::new(thickness, height, width, thickness);
-        let left_region = Rect::new(0, thickness, thickness, height);
+        let top_region = Rect {
+            sx: 0,
+            sy: 0,
+            w: rect_width,
+            h: thickness,
+        };
+        let right_region = Rect {
+            sx: rect_width,
+            sy: 0,
+            w: thickness,
+            h: rect_height,
+        };
+        let bottom_region = Rect {
+            sx: thickness,
+            sy: rect_height,
+            w: rect_width,
+            h: thickness,
+        };
+        let left_region = Rect {
+            sx: 0,
+            sy: thickness,
+            w: thickness,
+            h: rect_height,
+        };
 
         match start {
             StartCorner::TL => [
-                Self::translation_func(EdgeDirection::LTR, 0, top_region),
-                Self::translation_func(EdgeDirection::TTB, width, right_region),
-                Self::translation_func(EdgeDirection::RTL, width + height, bottom_region),
-                Self::translation_func(EdgeDirection::BTT, width + height + width, left_region),
+                Self::translation_func(EdgeDirection::LTR, top_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::TTB, right_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::RTL, bottom_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::BTT, left_region, fw, fh, ppl),
             ],
             StartCorner::TR => [
-                Self::translation_func(EdgeDirection::TTB, 0, right_region),
-                Self::translation_func(EdgeDirection::RTL, height, bottom_region),
-                Self::translation_func(EdgeDirection::BTT, height + width, left_region),
-                Self::translation_func(EdgeDirection::LTR, height + width + height, top_region),
+                Self::translation_func(EdgeDirection::TTB, right_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::RTL, bottom_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::BTT, left_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::LTR, top_region, fw, fh, ppl),
             ],
             StartCorner::BR => [
-                Self::translation_func(EdgeDirection::RTL, 0, bottom_region),
-                Self::translation_func(EdgeDirection::BTT, width, left_region),
-                Self::translation_func(EdgeDirection::LTR, width + height, top_region),
-                Self::translation_func(EdgeDirection::TTB, width + height + width, right_region),
+                Self::translation_func(EdgeDirection::RTL, bottom_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::BTT, left_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::LTR, top_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::TTB, right_region, fw, fh, ppl),
             ],
             StartCorner::BL => [
-                Self::translation_func(EdgeDirection::BTT, 0, left_region),
-                Self::translation_func(EdgeDirection::LTR, height, top_region),
-                Self::translation_func(EdgeDirection::TTB, height + width, right_region),
-                Self::translation_func(EdgeDirection::RTL, height + width + height, bottom_region),
+                Self::translation_func(EdgeDirection::BTT, left_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::LTR, top_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::TTB, right_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::RTL, bottom_region, fw, fh, ppl),
             ],
         }
     }
@@ -91,43 +130,66 @@ impl TranslationEngine {
     /// the functions for counter clockwise.
     fn get_translation_funcs_ccw(
         start: StartCorner,
-        width: i32,
-        height: i32,
+        rect_width: i32,
+        rect_height: i32,
         thickness: i32,
+        fw: i32,
+        fh: i32,
+        ppl: i32,
     ) -> [Action; 4] {
         debug!(
             "Setting up translation functions for counter clockwise layout starting from {:?}",
             start
         );
-        let top_region = Rect::new(thickness, 0, width, thickness);
-        let right_region = Rect::new(width, thickness, thickness, height);
-        let bottom_region = Rect::new(0, height, width, thickness);
-        let left_region = Rect::new(0, 0, thickness, height);
+        let top_region = Rect {
+            sx: thickness,
+            sy: 0,
+            w: rect_width,
+            h: thickness,
+        };
+        let right_region = Rect {
+            sx: rect_width,
+            sy: thickness,
+            w: thickness,
+            h: rect_height,
+        };
+        let bottom_region = Rect {
+            sx: 0,
+            sy: rect_height,
+            w: rect_width,
+            h: thickness,
+        };
+        let left_region = Rect {
+            sx: 0,
+            sy: 0,
+            w: thickness,
+            h: rect_height,
+        };
 
         match start {
             StartCorner::TL => [
-                Self::translation_func(EdgeDirection::TTB, 0, left_region),
-                Self::translation_func(EdgeDirection::LTR, height, bottom_region),
-                Self::translation_func(EdgeDirection::BTT, height + width, right_region),
-                Self::translation_func(EdgeDirection::RTL, height + width + height, top_region),
+                Self::translation_func(EdgeDirection::TTB, left_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::LTR, bottom_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::BTT, right_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::RTL, top_region, fw, fh, ppl),
             ],
             StartCorner::BL => [
-                Self::translation_func(EdgeDirection::LTR, 0, bottom_region),
-                Self::translation_func(EdgeDirection::BTT, width, right_region),
-                Self::translation_func(EdgeDirection::RTL, width + height, top_region),
-                Self::translation_func(EdgeDirection::TTB, width + height + width, left_region),
+                Self::translation_func(EdgeDirection::LTR, bottom_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::BTT, right_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::RTL, top_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::TTB, left_region, fw, fh, ppl),
             ],
             StartCorner::BR => [
-                Self::translation_func(EdgeDirection::BTT, 0, right_region),
-                Self::translation_func(EdgeDirection::RTL, height, top_region),
-                Self::translation_func(EdgeDirection::TTB, height + width, left_region),
-                Self::translation_func(EdgeDirection::LTR, height + width + height, bottom_region),
+                Self::translation_func(EdgeDirection::BTT, right_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::RTL, top_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::TTB, left_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::LTR, bottom_region, fw, fh, ppl),
             ],
             StartCorner::TR => [
-                Self::translation_func(EdgeDirection::RTL, 0, top_region),
-                Self::translation_func(EdgeDirection::TTB, width, left_region),
-                Self::translation_func(EdgeDirection::LTR, width + height, bottom_region),
-                Self::translation_func(EdgeDirection::BTT, width + height + width, right_region),
+                Self::translation_func(EdgeDirection::RTL, top_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::TTB, left_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::LTR, bottom_region, fw, fh, ppl),
+                Self::translation_func(EdgeDirection::BTT, right_region, fw, fh, ppl),
             ],
         }
     }
@@ -135,149 +197,130 @@ impl TranslationEngine {
     /// Returns a closure translation function that will can be applied to an incoming frame. Each
     /// translation function averages the values in the provided region along the specified
     /// direction. The resulting values will be written to target starting from an offset.
-    fn translation_func(direction: EdgeDirection, offset: i32, region: Rect) -> Action {
+    fn translation_func(
+        direction: EdgeDirection,
+        region: Rect,
+        fw: i32,
+        fh: i32,
+        ppl: i32,
+    ) -> Action {
         debug!("Creating translation func for direction {:?}", direction);
         match direction {
             // Read the roi from right to left while calculating the mean and writing to target
             EdgeDirection::RTL => {
-                Box::new(move |source: &Mat, target: &mut Vec<Vec3b>| -> Result<()> {
-                    let roi = Mat::roi(source, region)?;
+                Box::new(move |source: &[(u32, u32, u32)], lightstrip: &Lightstrip| {
+                    let row = source[region.sy * fw + 1..(region.sy + 1) * fw];
 
-                    // Offset + target index will be the actual index of a new value
-                    let mut target_index = 0;
-
-                    // Iterate over the roi from right to left
-                    for col in (0..roi.cols()).rev() {
+                    for chunk in row.chunks_exact(ppl) {
                         // Will keep the mean RGB values
-                        let mut mean_b = 0;
-                        let mut mean_g = 0;
-                        let mut mean_r = 0;
+                        let mut mean_r: u32 = 0;
+                        let mut mean_g: u32 = 0;
+                        let mut mean_b: u32 = 0;
 
-                        // Add up the values in one column up
-                        for row in 0..roi.rows() {
-                            let pixel = roi.at_2d::<Vec3b>(row, col)?;
-
-                            mean_b += pixel[0] as u32;
-                            mean_g += pixel[1] as u32;
-                            mean_r += pixel[2] as u32;
+                        for value in chunk.iter() {
+                            mean_r += value.0;
+                            mean_g += value.1;
+                            mean_b += value.2;
                         }
 
-                        // Calculate the mean
-                        mean_b /= roi.rows() as u32;
-                        mean_g /= roi.rows() as u32;
-                        mean_r /= roi.rows() as u32;
+                        mean_r /= ppl;
+                        mean_g /= ppl;
+                        mean_b /= ppl;
 
-                        // Write resulting RGB value to target and increase counter
-                        target[(offset + target_index) as usize] =
-                            Vec3b::from_array([mean_b as u8, mean_g as u8, mean_r as u8]);
-                        target_index += 1;
+                        lightstrip.set(RGB8 {
+                            r: mean_r as u8,
+                            g: mean_g as u8,
+                            b: mean_b as u8,
+                        });
+                        lightstrip.next();
                     }
-
-                    Ok(())
                 })
             }
             EdgeDirection::LTR => {
-                Box::new(move |source: &Mat, target: &mut Vec<Vec3b>| -> Result<()> {
-                    let roi = Mat::roi(source, region)?;
+                Box::new(move |source: &[(u32, u32, u32)], lightstrip: &Lightstrip| {
+                    let row = source[region.sy * fw..((region.sy + 1) * fw) - 1];
+                    for chunk in row.chunks_exact(ppl) {
+                        let mut mean_r: u32 = 0;
+                        let mut mean_g: u32 = 0;
+                        let mut mean_b: u32 = 0;
 
-                    let mut target_index = 0;
-
-                    // Iterate over the roi from right to left
-                    for col in 0..roi.cols() {
-                        // Will keep the mean RGB values
-                        let mut mean_b = 0;
-                        let mut mean_g = 0;
-                        let mut mean_r = 0;
-
-                        for row in 0..roi.rows() {
-                            let pixel = roi.at_2d::<Vec3b>(row, col)?;
-
-                            mean_b += pixel[0] as u32;
-                            mean_g += pixel[1] as u32;
-                            mean_r += pixel[2] as u32;
+                        for value in chunk.iter() {
+                            mean_r += value.0;
+                            mean_g += value.1;
+                            mean_b += value.2;
                         }
 
-                        // Calculate the mean
-                        mean_b /= roi.rows() as u32;
-                        mean_g /= roi.rows() as u32;
-                        mean_r /= roi.rows() as u32;
+                        mean_r /= ppl;
+                        mean_g /= ppl;
+                        mean_b /= ppl;
 
-                        // Write resulting RGB value to target and increase counter
-                        target[(offset + target_index) as usize] =
-                            Vec3b::from_array([mean_b as u8, mean_g as u8, mean_r as u8]);
-                        target_index += 1;
+                        lightstrip.set(RGB8 {
+                            r: mean_r as u8,
+                            g: mean_g as u8,
+                            b: mean_b as u8,
+                        });
+                        lightstrip.next();
                     }
-
-                    Ok(())
                 })
             }
             EdgeDirection::TTB => {
-                Box::new(move |source: &Mat, target: &mut Vec<Vec3b>| -> Result<()> {
-                    let roi = Mat::roi(source, region)?;
+                Box::new(move |source: &[(u32, u32, u32)], lightstrip: &Lightstrip| {
+                    let mut mean_r: u32 = 0;
+                    let mut mean_g: u32 = 0;
+                    let mut mean_b: u32 = 0;
 
-                    let mut target_index = 0;
+                    for row in 0..((region.h / ppl) * ppl) {
+                        let pixel = source[row * fw + region.x];
 
-                    // Iterate over the roi from right to left
-                    for row in 0..roi.rows() {
-                        // Will keep the mean RGB values
-                        let mut mean_b = 0;
-                        let mut mean_g = 0;
-                        let mut mean_r = 0;
+                        mean_r += pixel.0;
+                        mean_g += pixel.1;
+                        mean_b += pixel.2;
 
-                        for col in 0..roi.cols() {
-                            let pixel = roi.at_2d::<Vec3b>(row, col)?;
+                        if row % ppl == (ppl - 1) {
+                            mean_r /= ppl;
+                            mean_g /= ppl;
+                            mean_b /= ppl;
 
-                            mean_b += pixel[0] as u32;
-                            mean_g += pixel[1] as u32;
-                            mean_r += pixel[2] as u32;
+                            lightstrip.set(RGB {
+                                r: mean_r,
+                                g: mean_g,
+                                b: mean_b,
+                            });
+                            lightstrip.next();
                         }
-
-                        // Calculate the mean
-                        mean_b /= roi.cols() as u32;
-                        mean_g /= roi.cols() as u32;
-                        mean_r /= roi.cols() as u32;
-
-                        // Write resulting RGB value to target and increase counter
-                        target[(offset + target_index) as usize] =
-                            Vec3b::from_array([mean_b as u8, mean_g as u8, mean_r as u8]);
-                        target_index += 1;
                     }
-
-                    Ok(())
                 })
             }
             EdgeDirection::BTT => {
-                Box::new(move |source: &Mat, target: &mut Vec<Vec3b>| -> Result<()> {
-                    let roi = Mat::roi(source, region)?;
+                Box::new(move |source: &[(u32, u32, u32)], lightstrip: &Lightstrip| {
+                    let mut mean_r: u32 = 0;
+                    let mut mean_g: u32 = 0;
+                    let mut mean_b: u32 = 0;
 
-                    let mut target_index = 0;
+                    // If the height of the region is 10 and we have 3 pixels_per_led the last
+                    // pixel of the region wont be used. The expression means that it shall
+                    // start at the index so that pixel_per_led perfectly fits into the
+                    // iterator x times
+                    for (i, row) in ((fh - ((region.h / ppl) * ppl))..fh).rev().enumerate() {
+                        let pixel = source[row * fw + region.x];
 
-                    // Iterate over the roi from right to left
-                    for row in (0..roi.rows()).rev() {
-                        // Will keep the mean RGB values
-                        let mut mean_b = 0;
-                        let mut mean_g = 0;
-                        let mut mean_r = 0;
+                        mean_r += pixel.0;
+                        mean_g += pixel.1;
+                        mean_b += pixel.2;
 
-                        for col in 0..roi.cols() {
-                            let pixel = roi.at_2d::<Vec3b>(row, col)?;
+                        if i % ppl == (ppl - 1) {
+                            mean_r /= ppl;
+                            mean_g /= ppl;
+                            mean_b /= ppl;
 
-                            mean_b += pixel[0] as u32;
-                            mean_g += pixel[1] as u32;
-                            mean_r += pixel[2] as u32;
+                            lightstrip.set(RGB {
+                                r: mean_r,
+                                g: mean_g,
+                                b: mean_b,
+                            });
+                            lightstrip.next();
                         }
-
-                        // Calculate the mean
-                        mean_b /= roi.cols() as u32;
-                        mean_g /= roi.cols() as u32;
-                        mean_r /= roi.cols() as u32;
-
-                        target[(offset + target_index) as usize] =
-                            Vec3b::from_array([mean_b as u8, mean_g as u8, mean_r as u8]);
-                        target_index += 1;
                     }
-
-                    Ok(())
                 })
             }
         }

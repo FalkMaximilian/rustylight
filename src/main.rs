@@ -1,19 +1,19 @@
 #![allow(dead_code)]
 #![allow(unreachable_code)]
 
+mod lightstrip;
 mod settings;
 mod translation_engine;
 mod video;
 
+use lightstrip::Lightstrip;
 use std::time::Duration;
+use v4l::io::traits::CaptureStream;
+use v4l::Format;
+use v4l::Stream;
+use video::process_frame;
 
 use anyhow::Result;
-use opencv::{
-    core::{Scalar, Vec3b, CV_8UC3},
-    highgui,
-    prelude::*,
-    videoio::VideoCapture,
-};
 use settings::Settings;
 
 use translation_engine::TranslationEngine;
@@ -27,51 +27,7 @@ use std::thread::sleep;
 use smart_leds::{SmartLedsWrite, RGB8};
 use ws281x_rpi::Ws2812Rpi;
 
-fn vec3b_to_smaller_rgb8(temp: &Vec<Vec3b>, pixel_per_led: i32) -> Vec<RGB8> {
-    let mut pixels: Vec<RGB8> = Vec::new();
-
-    for chunk in temp.chunks(pixel_per_led as usize) {
-        let mut mean_b = 0;
-        let mut mean_g = 0;
-        let mut mean_r = 0;
-
-        for elem in chunk.iter() {
-            mean_b += elem[0] as u32;
-            mean_g += elem[1] as u32;
-            mean_r += elem[2] as u32;
-        }
-
-        mean_b /= pixel_per_led as u32;
-        mean_g /= pixel_per_led as u32;
-        mean_r /= pixel_per_led as u32;
-
-        pixels.push(RGB8 {
-            r: mean_r as u8,
-            g: mean_g as u8,
-            b: mean_b as u8,
-        })
-    }
-
-    pixels
-}
-
-/// If a size-zero has been received wait for half a second and try again
-fn wait_for_frame(v: &mut VideoCapture, f: &mut Mat) {
-    loop {
-        v.read(f).expect("Could not read frame.");
-        let size = f.size().expect("Could not get size from frame");
-        if size.width == 0 || size.height == 0 {
-            debug!("Input with invalid size. Waiting...");
-            sleep(Duration::from_millis(500));
-            continue;
-        }
-        break;
-    }
-}
-
 fn main() -> Result<()> {
-    dotenvy::dotenv()?;
-
     let settings = Settings::new()?;
 
     let subscriber = FmtSubscriber::builder()
@@ -85,28 +41,13 @@ fn main() -> Result<()> {
         &settings
     );
 
-    #[cfg(feature = "highgui")]
-    {
-        highgui::named_window("original", highgui::WINDOW_NORMAL)?;
-        highgui::named_window("frame", highgui::WINDOW_NORMAL)?;
-    }
+    let (mut stream, fmt) = Video::new(&settings)?;
+    info!("Format in use:\n{}", fmt);
 
-    let mut orig_frame = Mat::default();
-
-    let mut input = Video::new(&settings)?;
-    //let mut cam =
-    //    videoio::VideoCapture::from_file("/home/max/Downloads/test_vid_02.mp4", videoio::CAP_ANY)?;
-
-    // Get the size of the video feed
-    wait_for_frame(&mut input, &mut orig_frame);
-    let size = orig_frame.size()?;
-    info!(
-        "Reading video data with resolution widht: {}, height: {}",
-        size.width, size.height
-    );
+    let (buf, _meta) = stream.next().unwrap();
 
     // The border must be smaller than half of width and height
-    if size.width / 2 < settings.capture_area_size || size.height < settings.capture_area_size {
+    if fmt.width / 2 < settings.capture_area_size || fmt.height < settings.capture_area_size {
         info!(
             "Border is too thick! The following must hold: border < width/2 && border < height/2"
         );
@@ -114,25 +55,18 @@ fn main() -> Result<()> {
     }
 
     // Set the width of "regions"
-    let region_width = size.width - settings.capture_area_size;
-    let region_height = size.height - settings.capture_area_size;
+    let region_width = fmt.width - settings.capture_area_size;
+    let region_height = fmt.height - settings.capture_area_size;
 
     let pixel_per_led = ((2 * region_height) + (2 * region_width)) / settings.led_count;
     info!("Pixels per LED: {}", pixel_per_led);
 
-    // Create the target target_frame
-    // This will hold the data that shall be sent to the leds
-    //let mut target_frame = Mat::new_rows_cols_with_default(
-    //    1,
-    //    (2 * region_height) + (2 * region_width),
-    //    orig_frame.typ(),
-    //    Scalar::all(0.0),
-    //)?;
-
-    let mut target_vec: Vec<Vec3b> =
-        Vec::with_capacity(((2 * region_height) + (2 * region_height)) as usize);
+    let mut temp_vec: Vec<(u32, u32, u32)> =
+        Vec::with_capacity(((2 * region_height) + (2 * region_height)) * 3 as usize);
 
     let mut led_values: Vec<RGB8> = Vec::with_capacity(settings.led_count as usize);
+    let mut ledstrip = Lightstrip::new(settings.led_count);
+
     let mut ws = Ws2812Rpi::new(settings.led_count, 18)?;
 
     // Translation funcs that shall be applied to each frame
@@ -142,22 +76,21 @@ fn main() -> Result<()> {
         region_width,
         region_height,
         settings.capture_area_size,
+        fmt.width,
+        fmt.height,
+        pixel_per_led,
     );
 
     info!("----- STARTING MAIN LOOP -----");
     loop {
-        wait_for_frame(&mut input, &mut orig_frame);
+        let (buf, _meta) = stream.next().unwrap();
+        process_frame(buf, temp_vec);
 
         for func in translation_funcs.iter() {
-            func(&orig_frame, &mut target_vec)?;
+            func(&temp_vec, &ledstrip);
         }
 
-        ws.write(
-            vec3b_to_smaller_rgb8(&target_vec, pixel_per_led)
-                .iter()
-                .cloned(),
-        )
-        .unwrap();
+        ws.write(ledstrip.leds.iter().cloned()).unwrap();
 
         #[cfg(feature = "highgui")]
         {
