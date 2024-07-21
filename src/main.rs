@@ -1,6 +1,3 @@
-#![allow(dead_code)]
-#![allow(unreachable_code)]
-
 mod lightstrip;
 mod settings;
 mod translation_engine;
@@ -23,10 +20,6 @@ use tracing_subscriber::FmtSubscriber;
 use video::Video;
 
 use std::thread::sleep;
-
-use rs_ws281x::ChannelBuilder;
-use rs_ws281x::ControllerBuilder;
-use rs_ws281x::StripType;
 
 fn main() -> Result<()> {
     let settings = Settings::new()?;
@@ -65,24 +58,8 @@ fn main() -> Result<()> {
     let mut temp_vec: Vec<(u32, u32, u32)> =
         Vec::with_capacity(((2 * region_height) + (2 * region_height)) * 3 as usize);
 
-    // let mut led_values: Vec<RGB8> = Vec::with_capacity(settings.led_count as usize);
+    // let mut led_values: Vec<(u32, u32, u32)> = Vec::with_capacity(settings.led_count as usize);
     let mut ledstrip = Lightstrip::new(settings.led_count);
-
-    let mut controller = ControllerBuilder::new()
-        .freq(800_000)
-        .dma(10)
-        .channel(
-            0,
-            ChannelBuilder::new()
-                .pin(10)
-                .count(settings.led_count)
-                .strip_type(StripType::Ws2812)
-                .build(),
-        )
-        .build()
-        .unwrap();
-
-    let leds = controller.leds_mut(0);
 
     // Translation funcs that shall be applied to each frame
     let translation_funcs = TranslationEngine::new(
@@ -103,20 +80,6 @@ fn main() -> Result<()> {
 
         for func in translation_funcs.iter() {
             func(&temp_vec, &ledstrip);
-        }
-
-        ws.write(ledstrip.leds.iter().cloned()).unwrap();
-
-        #[cfg(feature = "highgui")]
-        {
-            highgui::imshow("original", &orig_frame)?;
-            highgui::imshow("frame", &target_frame)?;
-
-            let key = highgui::wait_key(1)?;
-            if key == 113 {
-                // quit with q
-                break;
-            }
         }
     }
 

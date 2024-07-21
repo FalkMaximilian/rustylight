@@ -1,6 +1,5 @@
 use anyhow::Result;
 
-use smart_leds::RGB8;
 use tracing::debug;
 
 use crate::{
@@ -227,11 +226,7 @@ impl TranslationEngine {
                         mean_g /= ppl;
                         mean_b /= ppl;
 
-                        lightstrip.set(RGB8 {
-                            r: mean_r as u8,
-                            g: mean_g as u8,
-                            b: mean_b as u8,
-                        });
+                        lightstrip.set((mean_r as u8, mean_g as u8, mean_b as u8));
                         lightstrip.next();
                     }
                 })
@@ -254,11 +249,7 @@ impl TranslationEngine {
                         mean_g /= ppl;
                         mean_b /= ppl;
 
-                        lightstrip.set(RGB8 {
-                            r: mean_r as u8,
-                            g: mean_g as u8,
-                            b: mean_b as u8,
-                        });
+                        lightstrip.set((mean_r as u8, mean_g as u8, mean_b as u8));
                         lightstrip.next();
                     }
                 })
@@ -281,11 +272,7 @@ impl TranslationEngine {
                             mean_g /= ppl;
                             mean_b /= ppl;
 
-                            lightstrip.set(RGB {
-                                r: mean_r,
-                                g: mean_g,
-                                b: mean_b,
-                            });
+                            lightstrip.set((mean_r, mean_g, mean_b));
                             lightstrip.next();
                         }
                     }
@@ -313,11 +300,7 @@ impl TranslationEngine {
                             mean_g /= ppl;
                             mean_b /= ppl;
 
-                            lightstrip.set(RGB {
-                                r: mean_r,
-                                g: mean_g,
-                                b: mean_b,
-                            });
+                            lightstrip.set((mean_r as u8, mean_g as u8, mean_b as u8));
                             lightstrip.next();
                         }
                     }
