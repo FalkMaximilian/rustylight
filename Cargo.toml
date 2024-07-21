@@ -21,7 +21,7 @@ serde_derive = "1.0.204"
 
 # LEDs
 smart-leds = "0.3.0"
-ws281x-rpi = "0.0.1"
+rs_ws281x = "0.5.1"
 
 # Get video stream
 v4l = "0.14.0"
